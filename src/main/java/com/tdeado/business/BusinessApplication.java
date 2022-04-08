@@ -1,5 +1,6 @@
 package com.tdeado.business;
 
+import cn.hutool.crypto.digest.MD5;
 import org.apache.tomcat.util.security.MD5Encoder;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
@@ -51,25 +52,41 @@ public class BusinessApplication implements CommandLineRunner {
     @Override
     public void run(String... args) throws Exception {
 
-        Document document = Jsoup.connect("http://www.shiyebian.net/hunan/").get();
-        for (Element element : document.select(".main .listbox .listlie li a")) {
-            sendMail(element.attr("href"));
-            Thread.sleep(1000*30);
+        while (true){
+            String[] strings= new String[]{
+                    "http://www.shiyebian.net/hunan/",
+                    "http://www.shiyebian.net/guangxi/guilin/",
+                    "http://www.shiyebian.net/guangxi/liuzhou/",
+
+            };
+            for (String string : strings) {
+                Document document = Jsoup.connect(string).get();
+                for (Element element : document.select(".main .listbox .listlie li a")) {
+                    try {
+                        sendMail(element.attr("href"));
+
+                    }catch (Exception e){
+                        e.printStackTrace();
+                    }
+                }
+            }
+            Thread.sleep(1000*60*10);
         }
     }
     @Autowired
     JavaMailSender mailSender;
     public void sendMail(String url) throws IOException, MessagingException {
-        Object val = redisTemplate.opsForValue().get(MD5Encoder.encode(url.getBytes(StandardCharsets.UTF_8)));
+        Object val = redisTemplate.opsForValue().get(MD5.create().digestHex(url.getBytes(StandardCharsets.UTF_8)));
         if (null!=val){
             return;
         }
+        redisTemplate.opsForValue().set(MD5.create().digestHex(url.getBytes(StandardCharsets.UTF_8)),url);
         Document html = Jsoup.connect(url).execute().parse();
         Elements content = html.select(".zhengwen");
         MimeMessage mimeMessage = mailSender.createMimeMessage();
         MimeMessageHelper messageHelper = new MimeMessageHelper(mimeMessage, true);
         messageHelper.setFrom("yancy@tdeado.com");
-        messageHelper.setTo("1310297087@qq.com");
+        messageHelper.setTo(new String[]{"1310297087@qq.com","2289102345@qq.com"});
         messageHelper.setSubject(html.select(".mleft .content h1").text());
         messageHelper.setText(content.html() + " <br/> :"+ url, true);
         for (Element a : content.select("a")) {
@@ -88,8 +105,12 @@ public class BusinessApplication implements CommandLineRunner {
                 messageHelper.addAttachment(name, new ByteArrayResource(IOUtils.toByteArray(file.bodyStream())));
             }
         }
-        redisTemplate.opsForValue().set(MD5Encoder.encode(url.getBytes(StandardCharsets.UTF_8)),url);
         mailSender.send(mimeMessage);
+        try {
+            Thread.sleep(1000*60);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         System.err.println("" + html.select(".mleft .content h1").text() + " " + LocalDateTime.now());
     }
 }
